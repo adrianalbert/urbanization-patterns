@@ -264,7 +264,7 @@ for epoch in range(opt.niter):
     lossD.append((np.mean(lossD_epoch), np.std(lossD_epoch)))
     lossG.append((np.mean(lossG_epoch), np.std(lossG_epoch)))
 
-    with gzip.open("training-loss.pickle.gz", "w") as f:
+    with gzip.open(opt.outf + "/training-loss.pickle.gz", "w") as f:
         pickle.dump([lossD, lossG], f)
 
     plt.ioff()
