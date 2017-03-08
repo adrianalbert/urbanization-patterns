@@ -1,0 +1,1 @@
+python dcgan-mod.py --dataset=csvfile --dataroot=/home/adalbert/data/world-cities/train.csv --cuda --niter=100 --ngpu=4 --outf=/home/adalbert/nbserver/pytorch-workspace/dcgan/100km/ --imageSize=64
