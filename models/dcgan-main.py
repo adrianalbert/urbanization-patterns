@@ -13,9 +13,25 @@ import torchvision.transforms as transforms
 import torchvision.utils as vutils
 from torch.autograd import Variable
 
+import sys
+sys.path.append("../WassersteinGAN/")
+
+import models.dcgan as dcgan
+import models.mlp as mlp
+
+import pandas as pd 
+import numpy as np 
+
+import matplotlib
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+
+import gzip
+import cPickle as pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset', required=True, help='cifar10 | lsun | imagenet | folder | lfw ')
+parser.add_argument('--dataset', required=True, help='folder | csvfile ')
 parser.add_argument('--dataroot', required=True, help='path to dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
@@ -49,32 +65,32 @@ cudnn.benchmark = True
 if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-if opt.dataset in ['imagenet', 'folder', 'lfw']:
+if opt.dataset == 'folder':
     # folder dataset
     dataset = dset.ImageFolder(root=opt.dataroot,
                                transform=transforms.Compose([
+                                   transforms.RandomHorizontalFlip(),
                                    transforms.Scale(opt.imageSize),
                                    transforms.CenterCrop(opt.imageSize),
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
-elif opt.dataset == 'lsun':
-    dataset = dset.LSUN(db_path=opt.dataroot, classes=['bedroom_train'],
-                        transform=transforms.Compose([
-                            transforms.Scale(opt.imageSize),
-                            transforms.CenterCrop(opt.imageSize),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                        ]))
-elif opt.dataset == 'cifar10':
-    dataset = dset.CIFAR10(root=opt.dataroot, download=True,
-                           transform=transforms.Compose([
-                               transforms.Scale(opt.imageSize),
-                               transforms.ToTensor(),
-                               transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                           ])
-    )
+elif opt.dataset == 'csvfile':
+    sys.path.append("../pytorch_utils")
+    from loader_dataframe import ImageDataFrame, grayscale_loader
+    df = pd.read_csv(opt.dataroot)
+    dataset = ImageDataFrame(df=df,
+                             loader=grayscale_loader,
+                             transform=transforms.Compose([
+                                   transforms.RandomHorizontalFlip(),
+                                   transforms.Scale(opt.imageSize),
+                                   transforms.CenterCrop(opt.imageSize),
+                                   transforms.ToTensor(),
+                                   transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                               ]))
+
 assert dataset
+
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
 
@@ -82,7 +98,7 @@ ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
-nc = 3
+nc = 1
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
@@ -193,7 +209,11 @@ fixed_noise = Variable(fixed_noise)
 optimizerD = optim.Adam(netD.parameters(), lr = opt.lr, betas = (opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr = opt.lr, betas = (opt.beta1, 0.999))
 
+lossD = []
+lossG = []
 for epoch in range(opt.niter):
+    lossD_epoch = []
+    lossG_epoch = []
     for i, data in enumerate(dataloader, 0):
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -233,6 +253,8 @@ for epoch in range(opt.niter):
         D_G_z2 = output.data.mean()
         optimizerG.step()
 
+        lossD_epoch.append(errD.data[0])
+        lossG_epoch.append(errG.data[0])
         print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
               % (epoch, opt.niter, i, len(dataloader),
                  errD.data[0], errG.data[0], D_x, D_G_z1, D_G_z2))
@@ -242,6 +264,24 @@ for epoch in range(opt.niter):
             fake = netG(fixed_noise)
             vutils.save_image(fake.data,
                     '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch))
+
+    # save plot of losses for G and D
+    lossD.append((np.mean(lossD_epoch), np.std(lossD_epoch)))
+    lossG.append((np.mean(lossG_epoch), np.std(lossG_epoch)))
+
+    with gzip.open(opt.outf + "/training-loss.pickle.gz", "w") as f:
+        pickle.dump([lossD, lossG], f)
+
+    plt.ioff()
+    fig = plt.figure()
+    plt.errorbar(range(len(lossD)), [x[0] for x in lossD], 
+        yerr=[x[1] for x in lossD], label="D loss")
+    plt.errorbar(range(len(lossG)), [x[0] for x in lossG], 
+        yerr=[x[1] for x in lossG], label="G loss")
+    plt.legend(loc="best")
+    plt.title("DCGAN training on SAR urban patches")
+    plt.savefig("%s/training_progress.jpg"%opt.outf)
+    plt.close(fig)
 
     # do checkpointing
     torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
