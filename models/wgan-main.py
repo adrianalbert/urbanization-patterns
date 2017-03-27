@@ -152,7 +152,7 @@ if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
 
-input = torch.FloatTensor(opt.batchSize, 3, opt.imageSize, opt.imageSize)
+input = torch.FloatTensor(opt.batchSize, nc, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
 one = torch.FloatTensor([1])

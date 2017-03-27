@@ -36,6 +36,7 @@ parser.add_argument('--dataroot', required=True, help='path to dataset')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=2)
 parser.add_argument('--batchSize', type=int, default=64, help='input batch size')
 parser.add_argument('--imageSize', type=int, default=64, help='the height / width of the input image to network')
+parser.add_argument('--nc', type=int, default=3, help='input image channels')
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
 parser.add_argument('--ngf', type=int, default=64)
 parser.add_argument('--ndf', type=int, default=64)
@@ -47,6 +48,10 @@ parser.add_argument('--ngpu'  , type=int, default=1, help='number of GPUs to use
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
 parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
+parser.add_argument('--mlp_G', action='store_true', help='use MLP for G')
+parser.add_argument('--mlp_D', action='store_true', help='use MLP for D')
+parser.add_argument('--n_extra_layers', type=int, default=0, help='Number of extra layers on gen and disc')
+parser.add_argument('--noBN', action='store_true', help='use batchnorm or not (only for DCGAN)')
 
 opt = parser.parse_args()
 print(opt)
@@ -76,7 +81,7 @@ if opt.dataset == 'folder':
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
 elif opt.dataset == 'csvfile':
-    sys.path.append("../pytorch_utils")
+    sys.path.append("./pytorch_utils")
     from loader_dataframe import ImageDataFrame, grayscale_loader
     df = pd.read_csv(opt.dataroot)
     dataset = ImageDataFrame(df=df,
@@ -98,7 +103,9 @@ ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
-nc = 1
+nc = int(opt.nc)
+nc = int(opt.nc)
+n_extra_layers = int(opt.n_extra_layers)
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
@@ -109,80 +116,28 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-class _netG(nn.Module):
-    def __init__(self, ngpu):
-        super(_netG, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(ngf * 8),
-            nn.ReLU(True),
-            # state size. (ngf*8) x 4 x 4
-            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 4),
-            nn.ReLU(True),
-            # state size. (ngf*4) x 8 x 8
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf * 2),
-            nn.ReLU(True),
-            # state size. (ngf*2) x 16 x 16
-            nn.ConvTranspose2d(ngf * 2,     ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ngf),
-            nn.ReLU(True),
-            # state size. (ngf) x 32 x 32
-            nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-    def forward(self, input):
-        gpu_ids = None
-        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            gpu_ids = range(self.ngpu)
-        return nn.parallel.data_parallel(self.main, input, gpu_ids)
+if opt.noBN:
+    netG = dcgan.DCGAN_G_nobn(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
+elif opt.mlp_G:
+    netG = mlp.MLP_G(opt.imageSize, nz, nc, ngf, ngpu)
+else:
+    netG = dcgan.DCGAN_G(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
 
-netG = _netG(ngpu)
 netG.apply(weights_init)
-if opt.netG != '':
+if opt.netG != '': # load checkpoint if needed
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-class _netD(nn.Module):
-    def __init__(self, ngpu):
-        super(_netD, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf) x 32 x 32
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*2) x 16 x 16
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*4) x 8 x 8
-            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (ndf*8) x 4 x 4
-            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
-    def forward(self, input):
-        gpu_ids = None
-        if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            gpu_ids = range(self.ngpu)
-        output = nn.parallel.data_parallel(self.main, input, gpu_ids)
-        return output.view(-1, 1)
+if opt.mlp_D:
+    netD = mlp.MLP_D(opt.imageSize, nz, nc, ndf, ngpu)
+else:
+    netD = dcgan.DCGAN_D(opt.imageSize, nz, nc, ndf, ngpu, n_extra_layers)
+    netD.apply(weights_init)
 
-netD = _netD(ngpu)
-netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
+
 
 criterion = nn.BCELoss()
 
@@ -226,6 +181,7 @@ for epoch in range(opt.niter):
         label.data.resize_(batch_size).fill_(real_label)
 
         output = netD(input)
+        print(output.shape, label.shape)
         errD_real = criterion(output, label)
         errD_real.backward()
         D_x = output.data.mean()
