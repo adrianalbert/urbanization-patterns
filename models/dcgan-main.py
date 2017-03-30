@@ -18,6 +18,7 @@ sys.path.append("../WassersteinGAN/")
 
 import models.dcgan as dcgan
 import models.mlp as mlp
+import models.dcgan_orig as do
 
 import pandas as pd 
 import numpy as np 
@@ -116,24 +117,36 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
-if opt.noBN:
-    netG = dcgan.DCGAN_G_nobn(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
-elif opt.mlp_G:
-    netG = mlp.MLP_G(opt.imageSize, nz, nc, ngf, ngpu)
-else:
-    netG = dcgan.DCGAN_G(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
+# if opt.noBN:
+#     netG = dcgan.DCGAN_G_nobn(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
+# elif opt.mlp_G:
+#     netG = mlp.MLP_G(opt.imageSize, nz, nc, ngf, ngpu)
+# else:
+#     netG = dcgan.DCGAN_G(opt.imageSize, nz, nc, ngf, ngpu, n_extra_layers)
 
+# netG.apply(weights_init)
+# if opt.netG != '': # load checkpoint if needed
+#     netG.load_state_dict(torch.load(opt.netG))
+# print(netG)
+
+# if opt.mlp_D:
+#     netD = mlp.MLP_D(opt.imageSize, nz, nc, ndf, ngpu)
+# else:
+#     netD = dcgan.DCGAN_D(opt.imageSize, nz, nc, ndf, ngpu, n_extra_layers)
+#     netD.apply(weights_init)
+
+# if opt.netD != '':
+#     netD.load_state_dict(torch.load(opt.netD))
+# print(netD)
+
+netG = do._netG(ngpu, nc, nz, ngf)
 netG.apply(weights_init)
-if opt.netG != '': # load checkpoint if needed
+if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
-if opt.mlp_D:
-    netD = mlp.MLP_D(opt.imageSize, nz, nc, ndf, ngpu)
-else:
-    netD = dcgan.DCGAN_D(opt.imageSize, nz, nc, ndf, ngpu, n_extra_layers)
-    netD.apply(weights_init)
-
+netD = do._netD(ngpu, nc, ndf)
+netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
@@ -181,7 +194,6 @@ for epoch in range(opt.niter):
         label.data.resize_(batch_size).fill_(real_label)
 
         output = netD(input)
-        print(output.shape, label.shape)
         errD_real = criterion(output, label)
         errD_real.backward()
         D_x = output.data.mean()
@@ -193,6 +205,7 @@ for epoch in range(opt.niter):
         label.data.fill_(fake_label)
         output = netD(fake.detach())
         errD_fake = criterion(output, label)
+        print("D:", errD_fake.data.mean(), output.data.mean(), label.data.sum())
         errD_fake.backward()
         D_G_z1 = output.data.mean()
         errD = errD_real + errD_fake
@@ -205,6 +218,7 @@ for epoch in range(opt.niter):
         label.data.fill_(real_label) # fake labels are real for generator cost
         output = netD(fake)
         errG = criterion(output, label)
+        print("G:", errG.data.mean(), output.data.mean(), label.data.mean())
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()

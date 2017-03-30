@@ -1,0 +1,8 @@
+python dcgan-mod.py \
+--dataset=csvfile \
+--dataroot=/home/adalbert/data/world-cities/train.csv \
+--niter=100 \
+--cuda --ngpu=4 \
+--outf=/home/adalbert/nbserver/pytorch-workspace/DCGAN/25k-cities-128 \
+--imageSize=64 \
+--workers=4

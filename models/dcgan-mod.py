@@ -71,7 +71,7 @@ if opt.dataset == 'folder':
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
 elif opt.dataset == 'csvfile':
-    sys.path.append("../pytorch_utils")
+    sys.path.append("./pytorch_utils")
     from loader_dataframe import ImageDataFrame, grayscale_loader
     df = pd.read_csv(opt.dataroot)
     dataset = ImageDataFrame(df=df,

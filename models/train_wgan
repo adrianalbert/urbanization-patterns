@@ -1,0 +1,12 @@
+python wgan-main.py \
+--dataset=csvfile \
+--dataroot=/home/adalbert/data/world-cities/train.csv \
+--cuda --ngpu=4 \
+--niter=100 \
+--nc=1 \
+--experiment=/home/adalbert/nbserver/pytorch-workspace/SAR-WGAN/25k-cities-128-adam-nc1 \
+--imageSize=128 \
+--workers=4 \
+--adam \
+--lrD=0.0002 \
+--lrG=0.0002
