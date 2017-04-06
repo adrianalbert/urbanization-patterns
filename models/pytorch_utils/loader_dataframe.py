@@ -22,17 +22,25 @@ def is_image_file(filename):
 
 
 def find_classes(df, classCol="class"):
-    classes = df[classCol].unique().tolist()
-    classes.sort()
-    class_to_idx = {classes[i]: i for i in range(len(classes))}
+    if df[classCol].dtype in [float, np.float32, np.float64]:
+        classes = None
+        class_to_idx = None
+    else:
+        classes = df[classCol].unique().tolist()
+        classes.sort()
+        class_to_idx = {classes[i]: i for i in range(len(classes))}
     return classes, class_to_idx
 
 
 def make_dataset(df, class_to_idx, classCol="class", filenameCol="filename"):
     images = []
     df = df[df[filenameCol].apply(is_image_file)]
+    if class_to_idx is not None:
+        labels = df[classCol].apply(lambda x: class_to_idx[x]).values.tolist()
+    else:
+        labels = df[classCol].values.tolist()
     images = zip(df[filenameCol].values.tolist(), 
-                 df[classCol].apply(lambda x: class_to_idx[x]).values.tolist())
+                 labels)
     return images
 
 
@@ -59,8 +67,9 @@ class ImageDataFrame(data.Dataset):
 
     def __init__(self, df, transform=None, target_transform=None,
                  loader=default_loader, **kwargs):
-        classes, class_to_idx = find_classes(df)
-        imgs = make_dataset(df, class_to_idx)
+        classCol = kwargs['classCol'] if 'classCol' in kwargs else 'class'
+        classes, class_to_idx = find_classes(df, classCol=classCol)
+        imgs = make_dataset(df, class_to_idx, classCol=classCol)
         if len(imgs) == 0:
             raise(RuntimeError("Found 0 images in dataframe of: "+len(df)+"\n"
                                "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))

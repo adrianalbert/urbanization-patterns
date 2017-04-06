@@ -48,6 +48,7 @@ parser.add_argument('--cuda'  , action='store_true', help='enables cuda')
 parser.add_argument('--ngpu'  , type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
+parser.add_argument('--classCol', default='', help="column name for labels")
 parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
 parser.add_argument('--mlp_G', action='store_true', help='use MLP for G')
 parser.add_argument('--mlp_D', action='store_true', help='use MLP for D')
@@ -85,7 +86,7 @@ elif opt.dataset == 'csvfile':
     sys.path.append("./pytorch_utils")
     from loader_dataframe import ImageDataFrame, grayscale_loader
     df = pd.read_csv(opt.dataroot)
-    dataset = ImageDataFrame(df=df,
+    dataset = ImageDataFrame(df=df, classCol=opt.classCol,
                              loader=grayscale_loader,
                              transform=transforms.Compose([
                                    transforms.RandomHorizontalFlip(),
@@ -158,6 +159,8 @@ input = torch.FloatTensor(opt.batchSize, nc, opt.imageSize, opt.imageSize)
 noise = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 fixed_noise = torch.FloatTensor(opt.batchSize, nz, 1, 1).normal_(0, 1)
 label = torch.FloatTensor(opt.batchSize)
+cond  = torch.FloatTensor(opt.batchSize)
+shift = torch.FloatTensor(opt.batchSize, nz, 1, 1)
 real_label = 1
 fake_label = 0
 
@@ -165,12 +168,15 @@ if opt.cuda:
     netD.cuda()
     netG.cuda()
     criterion.cuda()
-    input, label = input.cuda(), label.cuda()
+    input, label, cond = input.cuda(), label.cuda(), cond.cuda()
     noise, fixed_noise = noise.cuda(), fixed_noise.cuda()
+    shift = shift.cuda()
 
 input = Variable(input)
 label = Variable(label)
 noise = Variable(noise)
+cond  = Variable(cond)
+
 fixed_noise = Variable(fixed_noise)
 
 # setup optimizer
@@ -183,32 +189,43 @@ for epoch in range(opt.niter):
     lossD_epoch = []
     lossG_epoch = []
     for i, data in enumerate(dataloader, 0):
+
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
         ###########################
-        # train with real
-        netD.zero_grad()
-        real_cpu, _ = data
+        real_cpu, cond_cpu = data
         batch_size = real_cpu.size(0)
+
         input.data.resize_(real_cpu.size()).copy_(real_cpu)
+        cond.data.resize_(cond_cpu.size()).copy_(cond_cpu)
         label.data.resize_(batch_size).fill_(real_label)
 
+        # train with real
+        netD.zero_grad()
         output = netD(input)
         errD_real = criterion(output, label)
         errD_real.backward()
         D_x = output.data.mean()
 
         # train with fake
+        mu = cond_cpu.numpy()
+        mu = np.repeat(mu, nz).reshape((-1,nz))
+        mu = mu.reshape(mu.shape + (1,1,))
+        # print(mu.shape, shift.size(), noise.size())
+        shift.resize_(batch_size, nz, 1, 1)
+        shift.copy_(torch.FloatTensor(mu))
+   
         noise.data.resize_(batch_size, nz, 1, 1)
-        noise.data.normal_(0, 1)
+        noise.data.normal_(0, 1)        
+        noise.data.add_(shift)
         fake = netG(noise)
         label.data.fill_(fake_label)
         output = netD(fake.detach())
         errD_fake = criterion(output, label)
-        print("D:", errD_fake.data.mean(), output.data.mean(), label.data.sum())
         errD_fake.backward()
         D_G_z1 = output.data.mean()
         errD = errD_real + errD_fake
+        
         optimizerD.step()
 
         ############################
@@ -218,7 +235,6 @@ for epoch in range(opt.niter):
         label.data.fill_(real_label) # fake labels are real for generator cost
         output = netD(fake)
         errG = criterion(output, label)
-        print("G:", errG.data.mean(), output.data.mean(), label.data.mean())
         errG.backward()
         D_G_z2 = output.data.mean()
         optimizerG.step()
