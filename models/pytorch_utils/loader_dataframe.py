@@ -4,6 +4,7 @@
 # https://github.com/pytorch/vision/blob/master/torchvision/datasets/folder.py
 
 import torch.utils.data as data
+import torch
 
 from PIL import Image
 import os
@@ -55,7 +56,7 @@ def grayscale_loader(path, val_nodata=128):
     pimg = default_loader(path, mode="L")
     img = np.array(pimg)
     img[abs(img-val_nodata)<0.01] = 0 # hack to remove no-data patches
-    pimg = Image.fromarray(np.uint8(img))    
+    pimg = Image.fromarray(np.uint8(img))  
     return pimg
 
 
@@ -93,3 +94,40 @@ class ImageDataFrame(data.Dataset):
 
     def __len__(self):
         return len(self.imgs)
+
+
+class WeightedRandomSampler(data.sampler.Sampler):
+    """Samples elements from [0,..,len(weights)-1] with given probabilities (weights).
+    Arguments:
+        weights (list)   : a list of weights, not necessary summing up to one
+        num_samples (int): number of samples to draw
+    """
+
+    def __init__(self, weights, num_samples, replacement=True):
+        self.weights = torch.DoubleTensor(weights)
+        self.num_samples = num_samples
+        self.replacement = replacement
+
+    def __iter__(self):
+        return iter(torch.multinomial(self.weights, self.num_samples, self.replacement))
+
+    def __len__(self):
+        return self.num_samples
+
+class BalancedRandomSampler(data.sampler.Sampler):
+    """Samples elements randomly, without replacement.
+    Arguments:
+        data_source (Dataset): dataset to sample from
+    """
+
+    def __init__(self, sources, labels, bal=1):
+        self.num_samples = len(sources)
+        self.bal = bal
+        self.labels = labels
+
+    def __iter__(self):
+        self.labels
+        return iter(torch.randperm(self.num_samples).long())
+
+    def __len__(self):
+        return self.num_samples

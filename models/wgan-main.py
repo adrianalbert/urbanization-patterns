@@ -113,6 +113,7 @@ elif opt.dataset == 'csvfile':
 assert dataset
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
+print(len(dataloader))
 
 ngpu = int(opt.ngpu)
 nz = int(opt.nz)

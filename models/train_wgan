@@ -4,8 +4,10 @@ python wgan-main.py \
 --cuda --ngpu=4 \
 --niter=100 \
 --nc=1 \
---experiment=/home/adalbert/nbserver/pytorch-workspace/SAR-WGAN/25k-cities-128-adam-nc1 \
---imageSize=128 \
+--ngf=16 \
+--ndf=16 \
+--experiment=/home/adalbert/nbserver/pytorch-workspace/SAR-WGAN/5kcities-8 \
+--imageSize=64 \
 --workers=4 \
 --adam \
 --lrD=0.0002 \

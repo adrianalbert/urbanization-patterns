@@ -4,7 +4,9 @@ python dcgan-main.py \
 --niter=100 \
 --cuda --ngpu=4 \
 --nc=1 \
---outf=/home/adalbert/nbserver/pytorch-workspace/DCGAN/25k-64-z-shift-2 \
+--ngf=16 \
+--ndf=16 \
+--outf=/home/adalbert/nbserver/pytorch-workspace/DCGAN/10kcities-16 \
 --imageSize=64 \
 --workers=4 \
 --classCol='built pct'
