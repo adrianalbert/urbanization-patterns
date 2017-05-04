@@ -23,6 +23,7 @@ def is_image_file(filename):
 
 
 def find_classes(df, classCol="class"):
+    print df[classCol].dtype
     if df[classCol].dtype in [float, np.float32, np.float64, object]:
         classes = None
         class_to_idx = None
