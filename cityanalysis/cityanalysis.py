@@ -2,6 +2,7 @@ import numpy as np
 from skimage import morphology
 import scipy.misc
 import copy
+import scipy as sp
 
 
 class City():
@@ -30,7 +31,7 @@ class City():
         self.compute_average()
         self.compute_regions()
         self.compute_fractal_dim()
-        self.compute_profile()
+        self.compute_profile(method="radial")
 
     def compute_average(self, c=None):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
@@ -66,7 +67,7 @@ class City():
             self.fractal_dim[x] = fract_dim
         return self.fractal_dim
 
-    def compute_profile(self, c=None, loc=None, **kwargs):
+    def compute_profile(self, c=None, loc=None, method="radial",**kwargs):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
         H,W,C = self.M.shape
         if loc is None:
@@ -77,13 +78,13 @@ class City():
             self.profiles = {}
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
-            theta, rays = extract_rays(np.nan_to_num(self.M[:,:,y]), x0, y0, **kwargs)
-            rays_mu = np.nanmean(np.abs(rays), 0); 
-            scale   = rays_mu.max() + 1e-5; 
-            rays_mu = rays_mu / scale
-            rays_se = np.nanstd(np.abs(rays), 0); 
-            rays_se = rays_se / np.sqrt(scale)
-            self.profiles[x] = (rays_mu, rays_se)
+            if method == "raysampling":
+                mu,se=compute_profile_raysampling(self.M[:,:,y],x0,y0,**kwargs)
+            elif method == "radial":
+                mu,se = compute_profile_radial(self.M[:,:,y], x0, y0, **kwargs)
+            else:
+                return None
+            self.profiles[x] = (mu, se)
         return self.profiles
 
     def get_regions(self, c=0, patches=[0]):
@@ -156,6 +157,41 @@ def get_regions(img0, patches=[0], c=0, amount=0.0):
         regions.append(bnds)
     img[:,:,c][mask_sel[:,:,c]>0] *= (1 + amount)
     return img, regions
+
+
+def compute_profile_radial(M, x0, y0, step=10, **kwargs):
+    W, H = M.shape
+    mu = []
+    sd = []
+    y,x = np.ogrid[-1:H-1,-1:W-1]
+    n_steps = int(H/(1.5*step))+1
+    last_mask = []
+    for n in np.arange(1,n_steps+1):
+        R = n*step
+        mx, my = np.where((x-x0)**2 + (y-y0)**2 <= R*R)
+        mask = zip(mx,my)
+        dmask= list(set(mask) - set(last_mask))     
+        dM = np.array([M[i,j] for i,j in dmask])
+        mu.append(np.nanmean(dM))
+        sd.append(np.nanstd(dM))
+        last_mask = mask
+    mu = np.array(mu); 
+    # scale = mu.max() + 1e-5; 
+    scale = 1
+    mu /= scale
+    sd = np.array(sd); 
+    sd /= np.sqrt(scale)
+    return mu, sd
+    
+
+def compute_profile_raysampling(img, x0, y0, **kwargs):
+    theta, rays = extract_rays(np.nan_to_num(img), x0, y0, **kwargs)
+    rays_mu = np.nanmean(np.abs(rays), 0); 
+    scale   = rays_mu.max() + 1e-5; 
+    rays_mu = rays_mu / scale
+    rays_se = np.nanstd(np.abs(rays), 0); 
+    rays_se = rays_se / np.sqrt(scale)
+    return rays_mu, rays_se
 
 
 def extract_rays(img, x0, y0, step=10, n_samples=200):
