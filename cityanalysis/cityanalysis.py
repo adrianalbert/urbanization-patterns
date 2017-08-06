@@ -159,7 +159,7 @@ def get_regions(img0, patches=[0], c=0, amount=0.0):
     return img, regions
 
 
-def compute_profile_radial(M, x0, y0, step=10, **kwargs):
+def compute_profile_radial(M, x0, y0, step=10, scale=False, **kwargs):
     W, H = M.shape
     mu = []
     sd = []
@@ -176,18 +176,17 @@ def compute_profile_radial(M, x0, y0, step=10, **kwargs):
         sd.append(np.nanstd(dM))
         last_mask = mask
     mu = np.array(mu); 
-    # scale = mu.max() + 1e-5; 
-    scale = 1
+    scale = mu.max() + 1e-5 if scale else 1
     mu /= scale
     sd = np.array(sd); 
     sd /= np.sqrt(scale)
     return mu, sd
     
 
-def compute_profile_raysampling(img, x0, y0, **kwargs):
+def compute_profile_raysampling(img, x0, y0, scale=False, **kwargs):
     theta, rays = extract_rays(np.nan_to_num(img), x0, y0, **kwargs)
     rays_mu = np.nanmean(np.abs(rays), 0); 
-    scale   = rays_mu.max() + 1e-5; 
+    scale = mu.max() + 1e-5 if scale else 1
     rays_mu = rays_mu / scale
     rays_se = np.nanstd(np.abs(rays), 0); 
     rays_se = rays_se / np.sqrt(scale)
