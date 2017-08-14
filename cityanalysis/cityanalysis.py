@@ -13,6 +13,7 @@ class City():
         '''
         M is a map of C channels, each representing a spatial quantity.
         kwargs are other city attributes (such as its name, population etc.)
+        mask == 0 represents areas where development is not possible (e.g., water bodies), and mask == 1 indicates areas that could be developed.
         '''
         self.M = M if M.ndim == 3 else M[:,np.newaxis]
         for k,v in kwargs.iteritems():
@@ -36,11 +37,14 @@ class City():
     def compute_average(self, c=None):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
         avg_areas = np.nanmean(self.M[:,:,c], (0,1))
+        sum_areas = np.nansum(self.M[:,:,c], (0,1))
         if not hasattr(self, 'avg_areas'):
             self.avg_areas = {}
+            self.sum_areas = {}
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
             self.avg_areas[x] = avg_areas[y]           
+            self.sum_areas[x] = sum_areas[y]           
         return self.avg_areas
 
     def compute_regions(self, c=None):
