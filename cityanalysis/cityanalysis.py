@@ -32,7 +32,7 @@ class City():
         self.compute_average()
         self.compute_regions()
         self.compute_fractal_dim()
-        self.compute_profile(method="radial")
+        self.compute_profile(method="radial", step=1.333)
 
     def compute_average(self, c=None):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
@@ -71,13 +71,13 @@ class City():
             self.fractal_dim[x] = fract_dim
         return self.fractal_dim
 
-    def compute_profile(self, c=None, loc=None, method="radial",**kwargs):
+    def compute_profile(self, c=None, center=None, method="radial",**kwargs):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
         H,W,C = self.M.shape
-        if loc is None:
+        if center is None:
             x0, y0 = H/2, W/2
         else:
-            x0, y0 = loc
+            x0, y0 = center
         if not hasattr(self, 'profiles'):
             self.profiles = {}
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
@@ -168,7 +168,7 @@ def compute_profile_radial(M, x0, y0, step=10, scale=False, **kwargs):
     mu = []
     sd = []
     y,x = np.ogrid[-1:H-1,-1:W-1]
-    n_steps = int(H/(1.5*step))+1
+    n_steps = int(H/step)+1
     last_mask = []
     for n in np.arange(1,n_steps+1):
         R = n*step
