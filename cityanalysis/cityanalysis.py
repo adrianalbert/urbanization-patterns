@@ -9,11 +9,12 @@ class City():
     """
     Interface to several common analysis tasks on a spatial distribution (map) representing observed quantities for a city.
     """
-    def __init__(self, M, mask=None, **kwargs):
+    def __init__(self, M, mask=None, bounds=None, **kwargs):
         '''
         M is a map of C channels, each representing a spatial quantity.
         kwargs are other city attributes (such as its name, population etc.)
         mask == 0 represents areas where development is not possible (e.g., water bodies), and mask == 1 indicates areas that could be developed.
+        bounds==1 encodes city administrative boundaries.
         '''
         self.M = M if M.ndim == 3 else M[:,np.newaxis]
         for k,v in kwargs.iteritems():
@@ -23,7 +24,9 @@ class City():
             self.mask[mask==0] = np.nan
         else:
             self.mask = np.ones(self.M.shape[:2])
-        self.M = self.M * self.mask[...,np.newaxis]
+        self.bounds = np.ones(self.M.shape[:2]) if bounds is None else (bounds>0).astype(int)
+        newmask = self.mask * (~np.isnan(self.mask))
+        self.M = self.M * newmask[...,np.newaxis]
 
     def analyze(self):
         '''
@@ -34,10 +37,17 @@ class City():
         self.compute_fractal_dim()
         self.compute_profile(method="radial", step=1.333)
 
-    def compute_average(self, c=None):
+    def _get_maps(self, c=None, within_bounds=False):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
-        avg_areas = np.nanmean(self.M[:,:,c], (0,1))
-        sum_areas = np.nansum(self.M[:,:,c], (0,1))
+        M = self.M[...,c]
+        if within_bounds:
+            M[self.bounds==0] = np.nan
+        return M, c        
+
+    def compute_average(self, c=None, within_bounds=False):
+        M, c = self._get_maps(c=c, within_bounds=within_bounds)
+        avg_areas = np.nanmean(M, (0,1))
+        sum_areas = np.nansum(M, (0,1))
         if not hasattr(self, 'avg_areas'):
             self.avg_areas = {}
             self.sum_areas = {}
@@ -47,33 +57,33 @@ class City():
             self.sum_areas[x] = sum_areas[y]           
         return self.avg_areas
 
-    def compute_regions(self, c=None):
-        c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
+    def compute_regions(self, c=None, within_bounds=False):
+        M, c = self._get_maps(c=c, within_bounds=within_bounds)
         if not hasattr(self, 'regions'):
             self.regions = {}
             self.masks_regions = {}
             self.areas_distr = {}
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
-            regions, mask_regions = compute_patch_areas(self.M[:,:,y])
+            regions, mask_regions = compute_patch_areas(M[...,y])
             log_counts, areas = compute_patch_area_distribution(regions, mask_regions)
             log_counts[log_counts<0] = 0
             self.regions[x], self.masks_regions[x], self.areas_distr[x] = regions, mask_regions, (log_counts[:10],areas[:10]) 
         return self.regions
 
-    def compute_fractal_dim(self, c=None):
-        c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
+    def compute_fractal_dim(self, c=None, within_bounds=False):
+        M, c = self._get_maps(c=c, within_bounds=within_bounds)
         if not hasattr(self, 'fractal_dim'):
             self.fractal_dim = {}
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
-            fract_dim,_,_ = fractal_dimension(self.M[:,:,y])
+            fract_dim,_,_ = fractal_dimension(M[...,y])
             self.fractal_dim[x] = fract_dim
         return self.fractal_dim
 
-    def compute_profile(self, c=None, center=None, method="radial",**kwargs):
-        c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
-        H,W,C = self.M.shape
+    def compute_profile(self, c=None, center=None, method="radial",within_bounds=False, **kwargs):
+        M, c = self._get_maps(c=c, within_bounds=within_bounds)
+        H,W,C = M.shape
         if center is None:
             x0, y0 = H/2, W/2
         else:
@@ -83,15 +93,16 @@ class City():
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
             if method == "raysampling":
-                mu,se=compute_profile_raysampling(self.M[:,:,y],x0,y0,**kwargs)
+                mu,se=compute_profile_raysampling(M[...,y], x0, y0, **kwargs)
             elif method == "radial":
-                mu,se = compute_profile_radial(self.M[:,:,y], x0, y0, **kwargs)
+                mu,se = compute_profile_radial(M[...,y], x0, y0, **kwargs)
             else:
                 return None
             self.profiles[x] = (mu, se)
         return self.profiles
 
-    def get_regions(self, c=0, patches=[0]):
+    def get_regions(self, c=0, patches=[0], within_bounds=False):
+        M, _ = self._get_maps(c=c, within_bounds=within_bounds)
         mask = self.mask_regions[c].copy()
         to_modify = [self.regions[c][p][0] for p in patches]
         mask_sel = np.zeros(mask.shape)
@@ -100,7 +111,7 @@ class City():
             mask_sel[mask == m] = 1
             bnds = np.nonzero(mask[:,:,c] == m)
             regions.append(bnds)
-        self.M[:,:,c][mask_sel[:,:,c]>0] *= (1 + amount)
+        M[...,c][mask_sel[:,:,c]>0] *= (1 + amount)
         return img, regions
 
 
