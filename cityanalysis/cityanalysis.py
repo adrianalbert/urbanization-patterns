@@ -28,83 +28,89 @@ class City():
         newmask = self.mask * (~np.isnan(self.mask))
         self.M = self.M * newmask[...,np.newaxis]
 
-    def analyze(self):
+    def analyze(self, within_bounds=False, step=1):
         '''
         Perform spatial statistics analysis for given map.
         '''
-        self.compute_average()
-        self.compute_regions()
-        self.compute_fractal_dim()
-        self.compute_profile(method="radial", step=1.333)
+        self.compute_average(within_bounds=within_bounds)
+        self.compute_regions(within_bounds=within_bounds)
+        self.compute_fractal_dim(within_bounds=within_bounds)
+        self.compute_profile(method="radial", within_bounds=within_bounds, step=step, bounds_layer=True)
 
     def _get_maps(self, c=None, within_bounds=False):
         c=range(self.M.shape[2]) if c is None else c if type(c)==list else [c]
         M = self.M[...,c]
         if within_bounds:
             M[self.bounds==0] = np.nan
-        return M, c        
+        return M, c
 
     def compute_average(self, c=None, within_bounds=False):
         M, c = self._get_maps(c=c, within_bounds=within_bounds)
+        suffix = '_bnds' if within_bounds else ''
         avg_areas = np.nanmean(M, (0,1))
         sum_areas = np.nansum(M, (0,1))
-        if not hasattr(self, 'avg_areas'):
-            self.avg_areas = {}
-            self.sum_areas = {}
+        if not hasattr(self, 'avg_areas'+suffix):
+            setattr(self, 'avg_areas'+suffix, {})
+            setattr(self, 'sum_areas'+suffix, {})
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
-            self.avg_areas[x] = avg_areas[y]           
-            self.sum_areas[x] = sum_areas[y]           
-        return self.avg_areas
+            getattr(self, 'avg_areas'+suffix)[x] = avg_areas[y]           
+            getattr(self, 'sum_areas'+suffix)[x] = sum_areas[y]           
+        return getattr(self, 'avg_areas'+suffix)
 
     def compute_regions(self, c=None, within_bounds=False):
         M, c = self._get_maps(c=c, within_bounds=within_bounds)
-        if not hasattr(self, 'regions'):
-            self.regions = {}
-            self.masks_regions = {}
-            self.areas_distr = {}
+        suffix = '_bnds' if within_bounds else ''
+        if not hasattr(self,'regions'+suffix):
+            setattr(self, 'regions' + suffix, {})
+            setattr(self, 'masks_regions' + suffix, {})
+            setattr(self, 'areas_distr' + suffix, {})
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
             regions, mask_regions = compute_patch_areas(M[...,y])
             log_counts, areas = compute_patch_area_distribution(regions, mask_regions)
+            if log_counts is None:
+                continue
             log_counts[log_counts<0] = 0
-            self.regions[x], self.masks_regions[x], self.areas_distr[x] = regions, mask_regions, (log_counts[:10],areas[:10]) 
-        return self.regions
+            getattr(self, 'regions'+suffix)[x], getattr(self, 'masks_regions'+suffix)[x], getattr(self, 'areas_distr'+suffix)[x] = regions, mask_regions, (log_counts[:10],areas[:10]) 
+        return getattr(self, 'regions'+suffix)
 
     def compute_fractal_dim(self, c=None, within_bounds=False):
         M, c = self._get_maps(c=c, within_bounds=within_bounds)
-        if not hasattr(self, 'fractal_dim'):
-            self.fractal_dim = {}
+        suffix = '_bnds' if within_bounds else ''
+        if not hasattr(self, 'fractal_dim'+suffix):
+            setattr(self, 'fractal_dim'+suffix, {})
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
         for x,y in zip(s,c):
             fract_dim,_,_ = fractal_dimension(M[...,y])
-            self.fractal_dim[x] = fract_dim
-        return self.fractal_dim
+            getattr(self, 'fractal_dim'+suffix)[x] = fract_dim
+        return getattr(self, 'fractal_dim'+suffix)
 
-    def compute_profile(self, c=None, center=None, method="radial",within_bounds=False, **kwargs):
+    def compute_profile(self, c=None, center=None, method="radial",within_bounds=False, bounds_layer=False, **kwargs):
         M, c = self._get_maps(c=c, within_bounds=within_bounds)
+        suffix = '_bnds' if within_bounds else ''
         H,W,C = M.shape
         if center is None:
             x0, y0 = H/2, W/2
         else:
             x0, y0 = center
-        if not hasattr(self, 'profiles'):
-            self.profiles = {}
+        if not hasattr(self, 'profiles'+suffix):
+            setattr(self, 'profiles'+suffix, {})
         s = [self.sources[x] for x in c] if hasattr(self, 'sources') else c
+        f_profile = compute_profile_raysampling if method=="raysampling" else compute_profile_radial
         for x,y in zip(s,c):
-            if method == "raysampling":
-                mu,se=compute_profile_raysampling(M[...,y], x0, y0, **kwargs)
-            elif method == "radial":
-                mu,se = compute_profile_radial(M[...,y], x0, y0, **kwargs)
-            else:
-                return None
-            self.profiles[x] = (mu, se)
-        return self.profiles
-
+            mu,se=f_profile(M[...,y], x0, y0, **kwargs)
+            getattr(self, 'profiles'+suffix)[x] = (mu, se)
+        if bounds_layer and hasattr(self, 'bounds'):
+            mu,se = f_profile(self.bounds, x0, y0, **kwargs)
+            getattr(self, 'profiles'+suffix)['bnds'] = (mu,se)
+        return getattr(self, "profiles"+suffix)
+ 
     def get_regions(self, c=0, patches=[0], within_bounds=False):
         M, _ = self._get_maps(c=c, within_bounds=within_bounds)
-        mask = self.mask_regions[c].copy()
-        to_modify = [self.regions[c][p][0] for p in patches]
+        suffix = '_bnds' if within_bounds else ''
+        mask = getattr(self, 'mask_regions'+suffix)[c].copy()
+        to_modify = [getattr(self, 'regions'+suffix)[c][p][0] for p in patches]
         mask_sel = np.zeros(mask.shape)
         regions = []
         for m in to_modify:
@@ -124,6 +130,8 @@ def compute_patch_areas(M):
     return areas, mask
 
 def compute_patch_area_distribution(areas, mask):
+    if len(areas)==0:
+        return None, None
     area_sizes = [x[1] for x in areas]
     log_area_bins = np.logspace(np.log(min(area_sizes)), np.log(max(area_sizes)), 20, base=np.exp(1))
     N_counts, areas = np.histogram(area_sizes, bins=log_area_bins)
@@ -176,6 +184,7 @@ def get_regions(img0, patches=[0], c=0, amount=0.0):
 
 def compute_profile_radial(M, x0, y0, step=10, scale=False, **kwargs):
     W, H = M.shape
+    W, H = W/2, H/2
     mu = []
     sd = []
     y,x = np.ogrid[-1:H-1,-1:W-1]
@@ -211,6 +220,7 @@ def compute_profile_raysampling(img, x0, y0, scale=False, **kwargs):
 def extract_rays(img, x0, y0, step=10, n_samples=200):
     n = n_samples / 4
     H,W = img.shape
+    H,W = H/2, W/2
     x = np.random.randint(0, W-1, n).tolist() + np.random.randint(0, W-1, n).tolist() + np.zeros(n).tolist() + np.repeat(W-1,n).tolist()
     y = np.zeros(n).tolist() + np.repeat(H-1,n).tolist() + \
         np.random.randint(0, H-1, n).tolist()+np.random.randint(0, H-1, n).tolist()
@@ -219,7 +229,7 @@ def extract_rays(img, x0, y0, step=10, n_samples=200):
     # for each endpoint, extract ray
     theta = []
     rays = []
-    len_ray = int(H/(1.5*step))+1
+    len_ray = int(H/step)+1
     rays_binned = np.zeros((len(xy), len_ray))
     for i,(x1,y1) in enumerate(xy):
         d = np.sqrt((x1-x0)**2 + (y1-y0)**2)
